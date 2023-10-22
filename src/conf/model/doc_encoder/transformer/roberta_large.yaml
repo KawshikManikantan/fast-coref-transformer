@@ -1,0 +1,5 @@
+name: 'roberta'
+model_size: 'large'
+model_str: 'roberta-large'
+max_encoder_segment_len: 512
+max_segment_len: 512

@@ -1,0 +1,12 @@
+defaults:
+ - mem_type: unbounded
+
+emb_size: 20
+mlp_size: 3000
+mlp_depth: 1
+sim_func: hadamard
+entity_rep: wt_avg
+num_feats: 2 ## Change this to remove position information.
+decoder_heads: 4
+decoder_layers: 2
+thresh: 0.0

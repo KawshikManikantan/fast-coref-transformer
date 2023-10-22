@@ -1,0 +1,5 @@
+name: 'llama'
+model_size: 'large'
+model_str: 'huggyllama/llama-7b'
+max_encoder_segment_len: 4096
+max_segment_len: 4096
