@@ -54,11 +54,11 @@ class EntityRankingModel(nn.Module):
             "bounded":torch.tensor(0.0),
             "coref": torch.tensor(0.0),
             "mention_count": torch.tensor(0.0),
-            "ment_correct":torch.tensor(0.0),
-            "ment_total":torch.tensor(0.0),
-            "ment_tp":torch.tensor(0.0),
-            "ment_pp":torch.tensor(0.0),
-            "ment_ap":torch.tensor(0.0),
+            "ment_correct":torch.tensor(0.0001),
+            "ment_total":torch.tensor(0.0001),
+            "ment_tp":torch.tensor(0.0001),
+            "ment_pp":torch.tensor(0.0001),
+            "ment_ap":torch.tensor(0.0001),
         }
         
         # Document encoder + Mention proposer
@@ -68,7 +68,7 @@ class EntityRankingModel(nn.Module):
 
         # Clustering module
         span_emb_size: int = self.mention_proposer.span_emb_size
-        encoder_hidden_size = self.mention_proposer.doc_encoder.hidden_size
+        encoder_hidden_size = self.mention_proposer.doc_encoder.config.final_output_dim
         # Use of genre feature in clustering or not
         if self.config.metadata_params.use_genre_feature:
             self.config.memory.num_feats = 3
@@ -220,6 +220,7 @@ class EntityRankingModel(nn.Module):
                 continue
 
             target = torch.tensor([gt_idx], device=self.device)
+            # print(target,action_prob_list[counter].shape)
             coref_loss += self.loss_fn(
                 torch.unsqueeze(action_prob_list[counter], dim=0), target
             )
@@ -339,7 +340,8 @@ class EntityRankingModel(nn.Module):
                     ment_loss += proposer_output_dict["ment_loss"]
             
             for key in ["ment_correct","ment_total","ment_tp","ment_pp","ment_ap"]:
-                loss_dict[key] += proposer_output_dict[key]
+                if key in proposer_output_dict:
+                    loss_dict[key] += proposer_output_dict[key]
             
 
 

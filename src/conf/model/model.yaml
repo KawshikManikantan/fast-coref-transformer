@@ -5,12 +5,13 @@ defaults:
 mention_params:
   max_span_width: 20
   ment_emb: endpoint
-  use_gold_ments: false
+  use_gold_ments: True
   use_topk: false
   top_span_ratio: 0.4
   emb_size: 20
   mlp_size: 3000
   mlp_depth: 1
+  
   ment_emb_to_size_factor:
     attn: 3
     endpoint: 2

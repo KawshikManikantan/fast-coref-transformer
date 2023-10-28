@@ -18,14 +18,19 @@ class BaseMemory(nn.Module):
 
         self.mem_size = span_emb_size
         self.encoder_hidden_size = encoder_hidden_size
+        # print("Encoder hidden size:",self.encoder_hidden_size)
         self.drop_module = drop_module
-            
+        
+        self.lqueries =  nn.Embedding(self.config.num_lqueries, self.encoder_hidden_size)
+        self.new_entity = nn.Embedding(self.config.num_lqueries, self.encoder_hidden_size)
+        self.cls = nn.Embedding(1, self.encoder_hidden_size)
+        
         # self.relator = nn.MultiheadAttention(self.mem_size, config.relator_heads)
+        entity_decoder_layer = nn.TransformerDecoderLayer(d_model=self.encoder_hidden_size, nhead=config.entity_decoder_heads,batch_first=True)
+        self.entity_decoder = nn.TransformerDecoder(entity_decoder_layer, num_layers=config.entity_decoder_layers)
+        
         decoder_layer = nn.TransformerDecoderLayer(d_model=self.encoder_hidden_size, nhead=config.decoder_heads,batch_first=True)
         self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=config.decoder_layers)
-        
-        self.new_entity = nn.Embedding(1, self.encoder_hidden_size)
-        self.cls = nn.Embedding(1, self.encoder_hidden_size)
         
         self.mem_coref_mlp = MLP(
             self.encoder_hidden_size,
@@ -42,7 +47,8 @@ class BaseMemory(nn.Module):
 
     def initialize_memory(
         self,
-        entity_mentions: Tensor = None,
+        entity_mentions = None,
+        memory = None,
         ent_counter: Tensor = None,
         last_mention_start: Tensor = None,
         first_mention_start: Tensor = None,
@@ -52,18 +58,17 @@ class BaseMemory(nn.Module):
         # Check for unintialized memory
         if entity_mentions is None or ent_counter is None or last_mention_start is None:
             entity_mentions = []
+            memory  = []
             ent_counter = torch.tensor([0.0]).to(self.device)
             last_mention_start = torch.zeros(1).long().to(self.device)
             first_mention_start = torch.zeros(1).long().to(self.device)
 
-        return entity_mentions,ent_counter, last_mention_start,first_mention_start
+        return entity_mentions,memory,ent_counter, last_mention_start,first_mention_start
 
     def get_coref_new_scores(
         self,
-        ment_tok_emb_tensor: Tensor,
-        entity_mentions: Tensor,
-        ent_counter: Tensor,
-        
+        ment_tok_emb_tensor,
+        memory,
     ) -> Tensor:
         """Calculate the coreference score with existing clusters.
 
@@ -80,16 +85,29 @@ class BaseMemory(nn.Module):
                         coref_new_score (M + 1):
                                         Coref scores concatenated with the score of forming a new cluster.
         """
+        
+        ## Memory
+        options = memory + [self.new_entity.weight]
+        options = torch.stack(options)
+        
         ## Query
         query = torch.cat([self.cls.weight, ment_tok_emb_tensor],dim = 0)
-        entity_scores = []
-        options = entity_mentions + [self.new_entity.weight]
-        for entity in options:
-            outputs = self.decoder(tgt=query,memory=entity)
-            coref_score_entity = self.mem_coref_mlp(outputs[0].unsqueeze(dim=0))
-            entity_scores.append(coref_score_entity.squeeze())
+        query = query.unsqueeze(dim=0).repeat(options.shape[0],1,1)
         
-        coref_score = torch.tensor(entity_scores,device=self.device)
+        # print("Options shape:",options.shape)
+        # print("Query Shape:",query.shape)
+        try:
+            outputs = self.decoder(tgt=query,memory=options)
+            # print("Outputs shape:",outputs.shape)
+            coref_score = self.mem_coref_mlp(outputs[:,0,:]).squeeze(dim=1)
+            # print("Coref score shape:",coref_score.shape)
+            # modified_mention = torch.mean(outputs[:,1:,:], dim=0).unsqueeze(dim=0)
+        except:
+            print("Options shape:",options.shape)
+            print("Query Shape:",query.shape)
+            raise
+        # print("Modified mention shape:",modified_mention.shape)
+        # print(modified_mention.shape)
         return coref_score
 
     @staticmethod

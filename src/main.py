@@ -103,7 +103,7 @@ def main(config):
         try:
             wandb.init(
                 id=model_name,
-                project="Coreference_training",
+                project="Coreference_transformer",
                 config=dict(config),
                 resume=True,
             )

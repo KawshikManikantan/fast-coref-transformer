@@ -18,6 +18,13 @@ class EntityMemory(BaseMemory):
         super(EntityMemory, self).__init__(config, span_emb_size,encoder_hidden_size, drop_module)
         self.mem_type: DictConfig = config.mem_type
     
+    def get_new_entity(self,entity_mentions):
+        # print("Entity mentytions shape:", entity_mentions.shape)
+        outputs = self.entity_decoder(tgt=self.lqueries.weight,memory=entity_mentions)
+        # print("Decoder output shape:", outputs.shape)
+        return outputs
+        
+        
     def forward_training(
         self,
         ment_boundaries: Tensor,
@@ -39,11 +46,15 @@ class EntityMemory(BaseMemory):
         """
         # Initialize memory
         first_overwrite, coref_new_list = True, []
-        entity_mentions, ent_counter, last_mention_start, first_mention_start = self.initialize_memory()
+        entity_mentions,memory,ent_counter, last_mention_start, first_mention_start = self.initialize_memory()
         
         for ment_idx, (ment_tok_emb_tensor, (gt_cell_idx, gt_action_str)) in enumerate(
             zip(ment_tok_emb_list, gt_actions)
         ):
+            # print("GT action str",gt_action_str)
+            # print("Len of entity mentions",len(entity_mentions))
+            # print("Len of memory",len(memory))
+            # print("Mention Tok size: ",ment_tok_emb_tensor.shape)
             ment_start, ment_end = ment_boundaries[ment_idx]
             if first_overwrite:
                 first_overwrite = False
@@ -55,10 +66,11 @@ class EntityMemory(BaseMemory):
                     [ment_start], dtype=torch.long, device=self.device
                 )
                 entity_mentions.append(ment_tok_emb_tensor)
+                memory.append(self.get_new_entity(entity_mentions[-1]))
                 continue
             else:
                 coref_new_scores = self.get_coref_new_scores(
-                    ment_tok_emb_tensor, entity_mentions, ent_counter
+                    ment_tok_emb_tensor, memory
                 )
                 coref_new_list.append(coref_new_scores)
 
@@ -66,10 +78,12 @@ class EntityMemory(BaseMemory):
             action_str, cell_idx = gt_action_str, gt_cell_idx
             if action_str == "c":
                 entity_mentions[cell_idx] = torch.cat([entity_mentions[cell_idx], ment_tok_emb_tensor],dim=0)
+                memory[cell_idx] = self.get_new_entity(entity_mentions[cell_idx])
                 ent_counter[cell_idx] = ent_counter[cell_idx] + 1
                 last_mention_start[cell_idx] = ment_start
             elif action_str == "o":
                 entity_mentions.append(ment_tok_emb_tensor)
+                memory.append(self.get_new_entity(entity_mentions[-1]))
                 ent_counter = torch.cat(
                     [ent_counter, torch.tensor([1.0], device=self.device)], dim=0
                 )
@@ -106,11 +120,11 @@ class EntityMemory(BaseMemory):
         assert len(mention_tok_emb_list) == len(gt_actions)
         # Initialize memory
         if memory_init is not None:
-            entity_mentions, ent_counter, last_mention_start,first_mention_start = self.initialize_memory(
+            entity_mentions, memory, ent_counter, last_mention_start,first_mention_start = self.initialize_memory(
                 **memory_init
             )
         else:
-            entity_mentions, ent_counter, last_mention_start,first_mention_start = self.initialize_memory()
+            entity_mentions, memory, ent_counter, last_mention_start,first_mention_start = self.initialize_memory()
 
         pred_actions = []  # argmax actions
         coref_scores_list = []
@@ -126,7 +140,7 @@ class EntityMemory(BaseMemory):
                 pred_cell_idx, pred_action_str = 0, "o"
             else:
                 coref_new_scores = self.get_coref_new_scores(
-                    ment_tok_emb_tensor, entity_mentions, ent_counter, 
+                    ment_tok_emb_tensor, memory 
                 )
                 coref_copy = coref_new_scores.clone().detach().cpu()
                 coref_scores_list.append(coref_copy)
@@ -143,19 +157,22 @@ class EntityMemory(BaseMemory):
                 first_overwrite = False
                 # We start with a single empty memory cell
                 entity_mentions.append(ment_tok_emb_tensor)
+                memory.append(self.get_new_entity(ment_tok_emb_tensor))
                 ent_counter = torch.tensor([1.0], device=self.device)
                 last_mention_start[0] = ment_start
                 first_mention_start[0] = ment_start
             else:
                 if next_action_str == "c":
                     # Perform coreference update on the cluster referenced by pred_cell_idx
-                    entity_mentions[next_cell_idx] = torch.cat([entity_mentions[next_cell_idx], ment_tok_emb_tensor ],dim=0)
+                    entity_mentions[next_cell_idx] = torch.cat([entity_mentions[next_cell_idx],ment_tok_emb_tensor],dim=0)
+                    memory[next_cell_idx] = self.get_new_entity(entity_mentions[next_cell_idx])
                     ent_counter[next_cell_idx] = ent_counter[next_cell_idx] + 1
                     last_mention_start[next_cell_idx] = ment_start
 
                 elif next_action_str == "o":
                     # Append the new entity to the entity cluster array
                     entity_mentions.append(ment_tok_emb_tensor)
+                    memory.append(self.get_new_entity(ment_tok_emb_tensor))
                     ent_counter = torch.cat(
                         [ent_counter, torch.tensor([1.0], device=self.device)], dim=0
                     )
@@ -168,6 +185,7 @@ class EntityMemory(BaseMemory):
 
         mem_state = {
             "entity_mentions": entity_mentions,
+            "memory": memory,
             "ent_counter": ent_counter,
             "last_mention_start": last_mention_start,
             "first_mention_start": first_mention_start,

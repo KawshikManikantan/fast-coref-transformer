@@ -74,6 +74,15 @@ class MentionProposalModule(nn.Module):
             bias=True,
             drop_module=self.drop_module,
         )
+        
+        self.compress_mlp = MLP(
+            input_size=hidden_size,
+            hidden_size=mention_params.mlp_size,
+            output_size=self.doc_encoder.config.final_output_dim,
+            num_hidden_layers=mention_params.mlp_depth,
+            bias=True,
+            drop_module=self.drop_module,
+        )
 
 
     def get_mention_embeddings(self, encoded_doc: Tensor, ment_starts: Tensor, ment_ends: Tensor
@@ -371,6 +380,7 @@ class MentionProposalModule(nn.Module):
 
         encoded_doc: Tensor = self.doc_encoder(document) #.float() LLAMA
         
+        
         if self.config.mention_params.use_gold_ments or gold_mentions:
             # Process gold mentions to a format similar to mentions obtained after prediction
             output_dict: Dict = self.transform_gold_mentions(document)
@@ -389,8 +399,9 @@ class MentionProposalModule(nn.Module):
         )
         output_dict["ment_emb_list"] = torch.unbind(mention_embs, dim=0)
 
+        encoded_doc_compressed = self.compress_mlp(encoded_doc)
         mention_tok_embs_list = self.get_mention_embeddings(
-            encoded_doc, pred_starts, pred_ends
+            encoded_doc_compressed, pred_starts, pred_ends
         )
         output_dict["ment_tok_emb_list"] = mention_tok_embs_list
         return output_dict

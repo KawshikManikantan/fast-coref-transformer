@@ -10,6 +10,8 @@ from torch import Tensor
 class IndependentDocEncoder(BaseDocEncoder):
     def __init__(self, config: DictConfig):
         super(IndependentDocEncoder, self).__init__(config)
+        
+        
 
     def forward(self, document: Dict) -> Tensor:
         doc_tens = document["tensorized_sent"]
@@ -29,7 +31,7 @@ class IndependentDocEncoder(BaseDocEncoder):
 
         if not self.config.finetune:
             with torch.no_grad():
-                print("Heyy No finetune")
+                # print("Heyy No finetune")
                 outputs = self.lm_encoder(
                     doc_tens, attention_mask=attn_mask
                 )  # C x L x E

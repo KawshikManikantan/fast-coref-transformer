@@ -377,7 +377,7 @@ class Experiment:
 
     def agg(self,datadepdict):
         agg_dict = defaultdict(float)
-        print(datadepdict)
+        # print(datadepdict)
         for dataset in datadepdict:
             for key in datadepdict[dataset]:
                 agg_dict[key] += datadepdict[dataset][key]
@@ -419,7 +419,7 @@ class Experiment:
             train_data = self.runtime_load_dataset("train")
             logger.info("Per epoch training steps: %d" % len(train_data))
             # Shuffle the concatenated examples again
-            np.random.shuffle(train_data)
+            # np.random.shuffle(train_data)
             logger.info("Per epoch training steps: %d" % len(train_data))
             encoder_params, task_params = model.get_params()
             stat_per_dataset = defaultdict(lambda: copy.deepcopy(loss_acc_template_dict))
@@ -525,7 +525,7 @@ class Experiment:
                     print("Eval needs to be done here")
                     # coref_dict = self.perform_train_eval()
                     coref_dict = {}
-                    print(stat_per_dataset)
+                    # print(stat_per_dataset)
                     if self.config.use_wandb:
                         self._wandb_log(split="train",stat_per_dataset=stat_per_dataset,agg_stat=agg_stat,coref_dict=coref_dict,step = self.train_info["global_steps"]//train_config.eval_per_k_steps)     
                     
@@ -563,7 +563,7 @@ class Experiment:
         # Shuffle and load the training data
         data = []
         for dataset, dataset_data in self.data_iter_map[split].items():
-            np.random.shuffle(dataset_data)
+            # np.random.shuffle(dataset_data)
             if self.num_split_docs_map[split].get(dataset, None) is not None:
                 # Subsampling the data - This is useful in joint training
                 logger.info(
@@ -666,7 +666,7 @@ class Experiment:
 
         ## Dev Loss Calculations:
         dev_data = self.runtime_load_dataset("dev")
-        np.random.shuffle(dev_data)
+        # np.random.shuffle(dev_data)
         stat_per_dataset = defaultdict(lambda: copy.deepcopy(loss_acc_template_dict))
         agg_stat = (self.agg)
         
@@ -705,8 +705,8 @@ class Experiment:
         coref_dict = {}
         train_config = self.config.trainer
         for dataset in self.data_iter_map["dev"]:
-            for go in [True,False]:
-                for tf in [True,False]:
+            for go in [True,]:
+                for tf in [False]:
                     result_dict = coref_evaluation(
                         self.config,
                         self.model,
@@ -791,8 +791,8 @@ class Experiment:
                 print("Dataset Name:",self.config.datasets[dataset].name)
                 logger.info("Dataset: %s\n" % self.config.datasets[dataset].name)
 
-                for go in [True,False]:
-                    for tf in [True,False]:
+                for go in [True]:
+                    for tf in [False]:
                         result_dict = coref_evaluation(
                             self.config,
                             self.model,
