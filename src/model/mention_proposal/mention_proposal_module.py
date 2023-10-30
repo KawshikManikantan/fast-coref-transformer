@@ -354,7 +354,9 @@ class MentionProposalModule(nn.Module):
         # print(document)
         for cluster in document["clusters"]:
             for ment_start, ment_end in cluster:
-                mentions.append((ment_start, ment_end))
+                span_width = ment_end - ment_start + 1
+                if span_width <= self.config.mention_params.max_span_width:
+                    mentions.append((ment_start, ment_end))
 
         if len(mentions):
             topk_starts, topk_ends = zip(*mentions)

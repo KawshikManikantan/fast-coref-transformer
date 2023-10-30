@@ -5,6 +5,7 @@ import math
 from omegaconf import DictConfig
 from typing import Dict, Tuple
 from torch import Tensor
+from torch.utils.data import DataLoader, TensorDataset
 
 LOG2 = math.log(2)
 
@@ -87,28 +88,30 @@ class BaseMemory(nn.Module):
         """
         
         ## Memory
-        options = memory + [self.new_entity.weight]
-        options = torch.stack(options)
+        entity_options = memory + [self.new_entity.weight]
+        entity_options = torch.stack(entity_options)
+        query_seed = torch.cat([self.cls.weight, ment_tok_emb_tensor],dim = 0)
         
+        entity_dataset = TensorDataset(entity_options)
+        dataloader = DataLoader(entity_dataset, batch_size=self.config.max_batch_size)
+        coref_score_final = torch.zeros(len(entity_options)).to(self.device)
+        num_processed = 0  
         ## Query
-        query = torch.cat([self.cls.weight, ment_tok_emb_tensor],dim = 0)
-        query = query.unsqueeze(dim=0).repeat(options.shape[0],1,1)
-        
-        # print("Options shape:",options.shape)
-        # print("Query Shape:",query.shape)
-        try:
-            outputs = self.decoder(tgt=query,memory=options)
-            # print("Outputs shape:",outputs.shape)
-            coref_score = self.mem_coref_mlp(outputs[:,0,:]).squeeze(dim=1)
-            # print("Coref score shape:",coref_score.shape)
-            # modified_mention = torch.mean(outputs[:,1:,:], dim=0).unsqueeze(dim=0)
-        except:
-            print("Options shape:",options.shape)
-            print("Query Shape:",query.shape)
-            raise
-        # print("Modified mention shape:",modified_mention.shape)
-        # print(modified_mention.shape)
-        return coref_score
+        for entity_batch in dataloader:
+            options = entity_batch[0]
+            query = query_seed.unsqueeze(dim=0).repeat(options.shape[0],1,1)
+            try:
+                outputs = self.decoder(tgt=query,memory=options)
+                # print(len(entity_options),num_processed,num_processed+options.shape[0])
+                coref_score_final[num_processed:num_processed+options.shape[0]] = self.mem_coref_mlp(outputs[:,0,:]).squeeze(dim=1)
+            except:
+                print("Options shape:",options.shape)
+                print("Query Shape:",query.shape)
+                raise
+            
+            num_processed += options.shape[0]
+
+        return coref_score_final
 
     @staticmethod
     def assign_cluster(coref_new_scores: Tensor) -> Tuple[int, str]:
