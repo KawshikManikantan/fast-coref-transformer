@@ -179,55 +179,7 @@ class EntityRankingModel(nn.Module):
 
         return ignore_loss
 
-    def calculate_coref_loss(
-        self, action_prob_list: List, action_tuple_list: List[Tuple[int, str]]
-    ) -> Tensor:
-        """Calculates the coreference loss for the autoregressive online clustering module.
-
-        Args:
-                action_prob_list (List):
-                        Probability of each clustering action i.e. mention is merged with existing clusters
-                        or a new cluster is created.
-                action_tuple_list (List[Tuple[int, str]]):
-                        Ground truth actions represented as a tuple of cluster index and action string.
-                        'c' represents that the mention is coreferent with existing clusters while
-                        'o' represents that the mention represents a new cluster.
-
-        Returns:
-                coref_loss (torch.Tensor):
-                        The scalar tensor representing the coreference loss.
-        """
-
-        num_ents, counter = 0, 0
-        coref_loss = torch.tensor(0.0, device=self.device)
-
-        max_ents = self.config.memory.mem_type.max_ents
-        for idx, (cell_idx, action_str) in enumerate(action_tuple_list):
-            if action_str == "c":
-                # Coreference with clusters currently tracked
-                gt_idx = cell_idx
-
-            elif action_str == "o":
-                # Overwrite - New cluster
-                # print("Num ents: ",num_ents)
-                gt_idx = num_ents
-                if max_ents is None or num_ents < max_ents:
-                    num_ents += 1
-
-                if num_ents == 1:  # The first ent is always overwritten - No loss there
-                    continue
-            else:
-                continue
-
-            target = torch.tensor([gt_idx], device=self.device)
-            # print(target,action_prob_list[counter].shape)
-            coref_loss += self.loss_fn(
-                torch.unsqueeze(action_prob_list[counter], dim=0), target
-            )
-            counter += 1
-
-        return coref_loss
-
+    
     @staticmethod
     def get_filtered_clusters(
         clusters, init_token_offset, final_token_offset, with_offset=True
@@ -323,7 +275,9 @@ class EntityRankingModel(nn.Module):
             
             
             proposer_output_dict = self.mention_proposer(cur_doc_slice,eval_loss=True)
-                
+
+              
+
             if proposer_output_dict.get("ments", None) is None:
                 token_offset += num_tokens
                 continue
@@ -348,6 +302,8 @@ class EntityRankingModel(nn.Module):
             # Update the document offset for next iteration
             token_offset += num_tokens
 
+        # breakpoint()
+
         # Step 2: Perform clustering
         # Get clusters part of the truncated document
         truncated_document_clusters = {
@@ -361,47 +317,29 @@ class EntityRankingModel(nn.Module):
             pred_mentions_list, truncated_document_clusters, self.config.memory.mem_type
         )
 
-        # print(gt_actions)
-        # for action in gt_actions:
-        #     # if action[0] != -1:
-        #     print(action[1])
+        ### There are no i actions here because they are removed
         
         pred_mentions = torch.tensor(pred_mentions_list, device=self.device)
 
         if self.mem_type == "unbounded":
-            coref_new_list = self.memory_net.forward_training(
+            coref_loss = self.memory_net.forward_training(
                 pred_mentions, mention_tok_emb_list, gt_actions, metadata
             )
-        else:
-            coref_new_list, new_ignore_list = self.memory_net.forward_training(
-                pred_mentions, mention_tok_emb_list, gt_actions, metadata
-            )
-
-            if len(new_ignore_list):
-                ignore_loss = self.calculate_new_ignore_loss(
-                    new_ignore_list, gt_actions
-                )
+            # breakpoint()
 
         # Consolidate different losses in one dictionary
         if ment_loss is not None:
             loss_dict["total"] = ment_loss
             loss_dict["entity"] = ment_loss
-            # loss_dict = {"total": ment_loss, "entity": ment_loss, "mention_count": torch.tensor(0.0)}
-        # else:
-            # loss_dict = {"total": torch.tensor(0.0,requires_grad=True), "mention_count": 0}
 
-        if len(coref_new_list) > 0:
-            coref_loss = self.calculate_coref_loss(coref_new_list, gt_actions)
+        if coref_loss is not None:
             loss_dict["total"] = loss_dict["total"] + coref_loss
             loss_dict["coref"] = coref_loss
             if ignore_loss is not None:
                 loss_dict["bounded"] = ignore_loss
                 loss_dict["total"] = loss_dict["total"] + ignore_loss
-            loss_dict["mention_count"] += torch.tensor(len(coref_new_list))
-            # print("Individual Contribution: ",len(coref_new_list))
-            # print("Individual Contribution: ",loss_dict["mention_count"])
-        
-        # print("Loss dict here:", loss_dict)
+            loss_dict["mention_count"] += torch.tensor(len(gt_actions))
+
         return loss_dict
 
     def forward(self, document: Dict,teacher_force=False,gold_mentions=False):
@@ -431,9 +369,6 @@ class EntityRankingModel(nn.Module):
         coref_scores_doc = []
         # mem_states_doc = []
         for idx in range(0, len(document["sentences"])):
-            # print(document["doc_key"])
-            # print("Teacher Force: ",teacher_force)
-            # print("Gold Mentions: ",gold_mentions)
             num_tokens = len(document["sentences"][idx])
 
             cur_example = {
@@ -483,8 +418,6 @@ class EntityRankingModel(nn.Module):
             #     )
             # }
             
-            # print("Mentions: ",cur_pred_mentions)
-            # print("Clusters: ",truncated_document_clusters)
             # Get ground truth clustering mentions
             pred_mentions_list.extend(cur_pred_mentions.tolist())
             gt_actions_full: List[Tuple[int, str]] = get_gt_actions(

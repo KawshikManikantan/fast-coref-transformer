@@ -27,6 +27,7 @@ class BaseMemory(nn.Module):
         self.cls = nn.Embedding(1, self.encoder_hidden_size)
         
         # self.relator = nn.MultiheadAttention(self.mem_size, config.relator_heads)
+        print("Encoder Hidden Sixe for Transformer:",self.encoder_hidden_size)
         entity_decoder_layer = nn.TransformerDecoderLayer(d_model=self.encoder_hidden_size, nhead=config.entity_decoder_heads,batch_first=True)
         self.entity_decoder = nn.TransformerDecoder(entity_decoder_layer, num_layers=config.entity_decoder_layers)
         
@@ -41,6 +42,9 @@ class BaseMemory(nn.Module):
             num_hidden_layers=config.mlp_depth,
             bias=True,
         )
+        self.loss_fn = nn.CrossEntropyLoss(
+            label_smoothing=self.config.label_smoothing_wt
+        )
 
     @property
     def device(self) -> torch.device:
@@ -51,67 +55,16 @@ class BaseMemory(nn.Module):
         entity_mentions = None,
         memory = None,
         ent_counter: Tensor = None,
-        last_mention_start: Tensor = None,
-        first_mention_start: Tensor = None,
         **kwargs
     ) -> Tuple[Tensor, Tensor, Tensor]:
         """Method to initialize the clusters and related bookkeeping variables."""
         # Check for unintialized memory
-        if entity_mentions is None or ent_counter is None or last_mention_start is None:
+        if entity_mentions is None or ent_counter is None:
             entity_mentions = []
             memory  = []
             ent_counter = torch.tensor([0.0]).to(self.device)
-            last_mention_start = torch.zeros(1).long().to(self.device)
-            first_mention_start = torch.zeros(1).long().to(self.device)
 
-        return entity_mentions,memory,ent_counter, last_mention_start,first_mention_start
-
-    def get_coref_new_scores(
-        self,
-        ment_tok_emb_tensor,
-        memory,
-    ) -> Tensor:
-        """Calculate the coreference score with existing clusters.
-
-        For creating a new cluster we use a dummy score of 0.
-        This is a free variable and this idea is borrowed from Lee et al 2017
-
-        Args:
-                        ment_tok_emb_tensor(T_{mj}x d'): Mention representation
-                        mem_tok_emb_tensor(M x d'): Cluster representations
-                        ent_counter (M): Mention counter of clusters.
-                        
-
-        Returns:
-                        coref_new_score (M + 1):
-                                        Coref scores concatenated with the score of forming a new cluster.
-        """
-        
-        ## Memory
-        entity_options = memory + [self.new_entity.weight]
-        entity_options = torch.stack(entity_options)
-        query_seed = torch.cat([self.cls.weight, ment_tok_emb_tensor],dim = 0)
-        
-        entity_dataset = TensorDataset(entity_options)
-        dataloader = DataLoader(entity_dataset, batch_size=self.config.max_batch_size)
-        coref_score_final = torch.zeros(len(entity_options)).to(self.device)
-        num_processed = 0  
-        ## Query
-        for entity_batch in dataloader:
-            options = entity_batch[0]
-            query = query_seed.unsqueeze(dim=0).repeat(options.shape[0],1,1)
-            try:
-                outputs = self.decoder(tgt=query,memory=options)
-                # print(len(entity_options),num_processed,num_processed+options.shape[0])
-                coref_score_final[num_processed:num_processed+options.shape[0]] = self.mem_coref_mlp(outputs[:,0,:]).squeeze(dim=1)
-            except:
-                print("Options shape:",options.shape)
-                print("Query Shape:",query.shape)
-                raise
-            
-            num_processed += options.shape[0]
-
-        return coref_score_final
+        return entity_mentions,memory,ent_counter
 
     @staticmethod
     def assign_cluster(coref_new_scores: Tensor) -> Tuple[int, str]:

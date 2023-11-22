@@ -414,6 +414,23 @@ class Experiment:
         # fscore = self.periodic_model_eval()
         eval_time = {"total_time": 0, "num_evals": 0}
         print("Started Training..")
+
+        
+        # Training "epoch" -> May not correspond to actual epoch
+        # prof = torch.profiler.profile(
+        #         schedule=torch.profiler.schedule(
+        #             wait=1,
+        #             warmup=1,
+        #             active=2),
+        #         on_trace_ready=torch.profiler.tensorboard_trace_handler('./result', worker_name='worker0'),
+        #         record_shapes=True,
+        #         profile_memory=True,  # This will take 1 to 2 minutes. Setting it to False could greatly speedup.
+        #         with_stack=True
+        #     )
+        
+        # prof.start()
+        
+        # breakpoint()
         while True:
             logger.info("Steps done %d" % (self.train_info["global_steps"]))
             train_data = self.runtime_load_dataset("train")
@@ -427,38 +444,31 @@ class Experiment:
             
             # Training "epoch" -> May not correspond to actual epoch
             for cur_document in train_data:
-                # print(cur_document["doc_key"])
                 # print(cur_document.keys())
-                # print(len(cur_document["subtoken_map"]))
-                # print(len(cur_document["clusters"]))
-                # if len(cur_document["subtoken_map"]) > 3000:
-                #     continue
-                    
+                num_mentions = sum([len(cluster) for cluster in cur_document["clusters"]])
+                print(cur_document["doc_key"],"Entities: ",len(cur_document["clusters"]),"Mentions: ",num_mentions)
+        
+                # prof.step() 
+                # breakpoint()
                 def handle_example(document: Dict) -> Union[None, float]:
                     self.train_info["global_steps"] += 1
                     for key in optimizer:
                         optimizer[key].zero_grad()
-                    # with profile(activities=[ProfilerActivity.CUDA], record_shapes=True, profile_memory=True, use_cuda= True) as prof:
-                        # with record_function("model_training"):
                     loss_dict: Dict = model.forward_training(document)
-                    # print(prof.key_averages().table(sort_by="cuda_memory_usage", row_limit=30))
                     total_loss = loss_dict["total"]
-                    # total_mentions = loss_dict["mention_count"]
+
                     if total_loss is None or torch.isnan(total_loss):
                         print("Problem with Loss. Should not occur often")
                         return None
 
                     total_loss.backward()
+                    # breakpoint()
 
                     # Gradient clipping
                     try:
                     # print(encoder_params)
                     # name_print = ["encoder","task"]
                         for name_ind,param_group in enumerate([encoder_params, task_params]):
-                            # print(name_print[name_ind])
-                            # for param in param_group:
-                            #     if param.grad is not None:
-                            #         print("Grad:",param.grad.view(-1))
                             torch.nn.utils.clip_grad_norm_(
                                 param_group,
                                 optimizer_config.max_gradient_norm,
@@ -475,7 +485,8 @@ class Experiment:
                     for key in optimizer:
                         optimizer[key].step()
                         scheduler[key].step()
-                        
+
+                    
                     loss_dict_items = {}
                     for key in loss_dict:
                         loss_dict_items[key] = loss_dict[key].item()
@@ -491,9 +502,6 @@ class Experiment:
                     return total_loss.item()
 
                 loss = handle_example(cur_document)
-                # print(stat_per_dataset)
-                # if loss is None:
-                #     continue
                 
                 if self.train_info["global_steps"] % train_config.log_frequency == 0:
                     max_mem = (
@@ -558,6 +566,9 @@ class Experiment:
                 break
             
             logger.handlers[0].flush()
+            
+        
+        # prof.stop()
 
     def runtime_load_dataset(self,split):
         # Shuffle and load the training data
@@ -833,8 +844,8 @@ class Experiment:
         # transformer model from command line.
         if self.config.get("override_encoder", False):
             model_config = config.model
-            print(type(self.config.model.doc_encoder.transformer))
-            print(self.config.model.doc_encoder.transformer)
+            # print(type(self.config.model.doc_encoder.transformer))
+            # print(self.config.model.doc_encoder.transformer)
             model_config.doc_encoder.transformer = (
                 self.config.model.doc_encoder.transformer
             )
@@ -862,6 +873,7 @@ class Experiment:
                 config.model.doc_encoder.transformer.model_str = doc_encoder_dir
 
         self.model = EntityRankingModel(config.model, config.trainer)
+        # print(self.model)
         # Document encoder parameters will be loaded via the huggingface initialization
         self.model.load_state_dict(checkpoint["model"], strict=False)
         if torch.cuda.is_available():
@@ -906,6 +918,8 @@ class Experiment:
 
             if torch.cuda.is_available():
                 self.model.cuda()
+            
+            # breakpoint()
 
         # if last_checkpoint:
         #     # If resuming training, restore the optimizer state as well

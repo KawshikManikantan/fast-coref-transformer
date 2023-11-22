@@ -3,7 +3,7 @@ defaults:
 
 emb_size: 20
 mlp_size: 256
-max_batch_size: 128
+max_batch_size: 64
 mlp_depth: 1
 sim_func: hadamard
 entity_rep: wt_avg
@@ -14,3 +14,4 @@ entity_decoder_layers: 2
 decoder_heads: 4
 decoder_layers: 2
 thresh: 0.0
+label_smoothing_wt: 0.1

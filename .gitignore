@@ -13,4 +13,5 @@ wandb/
 .hydra/
 src/logs/
 src/log_ana_init/
-src/*.txt
+*.txt
+*.jsonl
